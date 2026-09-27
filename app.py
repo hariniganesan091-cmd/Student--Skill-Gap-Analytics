@@ -4,8 +4,12 @@ from dotenv import load_dotenv
 from supabase import create_client
 load_dotenv()
 
-SUPABASE_URL = os.getenv("SUPABASE_URL")
-SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+SUPABASE_URL =
+os.getenv("SUPABASE_URL") or
+st.secrets["SUPABASE_URL"]
+SUPABASE_KEY =
+os.getenv("SUPABASE_KEY") or
+st.secrets["SUPABASE_KEY"]
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 try:
     response = supabase.table("users").select("*").limit(1).execute()
