@@ -3,6 +3,14 @@ import os
 import json
 import streamlit as st
 from datetime import datetime
+from dotenv import load_dotenv
+from supabase import create_client
+load_dotenv()
+
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+
+supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 DB_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "users.db")
 
@@ -431,41 +439,46 @@ def register_user(full_name, email, password, confirm_password):
 
     if not full_name:
         return False, "Full Name cannot be empty."
+
     if not email:
         return False, "Email ID cannot be empty."
+
     if not password:
         return False, "Password cannot be empty."
+
     if not confirm_password:
         return False, "Confirm Password cannot be empty."
+
     if password != confirm_password:
         return False, "Password and Confirm Password must match."
 
-    init_db()
-
-    existing_user = get_user_by_email(email)
-    if existing_user:
-        return False, "Account already exists. Please login."
-
-    conn = get_db_connection()
+    # Save to local SQLite database for local/offline login fallback
     try:
+        conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute("PRAGMA table_info(users)")
-        cols = [col[1] for col in cursor.fetchall()]
-        
-        if "full_name" in cols:
-            cursor.execute("INSERT INTO users (full_name, email, password) VALUES (?, ?, ?)", (full_name, email, password))
-        elif "name" in cols:
-            cursor.execute("INSERT INTO users (name, email, password) VALUES (?, ?, ?)", (full_name, email, password))
-        else:
-            cursor.execute("INSERT INTO users (full_name, email, password) VALUES (?, ?, ?)", (full_name, email, password))
-        
+        cursor.execute("INSERT OR REPLACE INTO users (full_name, email, password) VALUES (?, ?, ?)",
+                       (full_name, email, password))
         conn.commit()
-    except sqlite3.IntegrityError:
-        return False, "Account already exists. Please login."
-    except Exception as e:
-        return False, f"Database error: {str(e)}"
-    finally:
         conn.close()
+    except Exception:
+        pass
+
+    try:
+        response = supabase.auth.sign_up({
+            "email": email,
+            "password": password,
+            "options": {
+                "data": {
+                    "full_name": full_name
+                }
+            }
+        })
+
+        if response.user:
+            return True, "Registration Successful"
+
+    except Exception:
+        pass
 
     return True, "Registration Successful"
 
@@ -475,24 +488,45 @@ def login_user(email, password):
 
     if not email:
         return False, "Please enter your Email ID."
+
     if not password:
         return False, "Please enter your Password."
 
-    init_db()
+    try:
+        response = supabase.auth.sign_in_with_password({
+            "email": email,
+            "password": password
+        })
 
-    user = get_user_by_email(email)
-    if not user:
-        return False, "Account not found. Please register first."
+        user = response.user
 
-    if user["password"] != password:
-        return False, "Invalid Email ID or Password."
+        if user:
+            st.session_state.authenticated = True
+            st.session_state.user_email = user.email
+            st.session_state.user_name = (
+                user.user_metadata.get("full_name", "")
+                if user.user_metadata else ""
+            )
+            st.session_state.current_page = "dashboard"
 
-    st.session_state.authenticated = True
-    st.session_state.user_email = user["email"]
-    st.session_state.user_name = user["full_name"]
-    st.session_state.current_page = "dashboard"
-    load_student_progress(user["email"])
-    return True, "Login Successful"
+            load_student_progress(email)
+
+            return True, "Login Successful"
+
+    except Exception:
+        pass
+
+    # Fallback to local SQLite database (for demo users & offline mode)
+    local_user = get_user_by_email(email)
+    if local_user and local_user.get("password") == password:
+        st.session_state.authenticated = True
+        st.session_state.user_email = local_user["email"]
+        st.session_state.user_name = local_user["full_name"] or "Hema Harini"
+        st.session_state.current_page = "dashboard"
+        load_student_progress(local_user["email"])
+        return True, "Login Successful"
+
+    return False, "Invalid Email ID or Password."
 
 def logout_user():
     st.session_state.authenticated = False
@@ -513,5 +547,3 @@ def logout_user():
     st.session_state.reassessment_questions_map = {}
     st.session_state.asked_question_ids = set()
     st.experimental_rerun() if hasattr(st, "experimental_rerun") else st.rerun()
-
-

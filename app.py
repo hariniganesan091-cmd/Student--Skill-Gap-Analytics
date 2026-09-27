@@ -1,5 +1,18 @@
 import streamlit as st
 import os
+from dotenv import load_dotenv
+from supabase import create_client
+load_dotenv()
+
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+try:
+    response = supabase.table("users").select("*").limit(1).execute()
+    print("Supabase connection successful!")
+    print(response.data)
+except Exception as e:
+    print("Supabase connection failed:", e)
 import json
 import base64
 from datetime import datetime
@@ -174,12 +187,6 @@ if st.session_state.current_page == "login" and not st.session_state.authenticat
         with st.form("login_form", clear_on_submit=False):
             email = st.text_input("Email ID", placeholder="Enter your email ID")
             password = st.text_input("Password", type="password", placeholder="Enter your password")
-
-            col_rem, col_fog = st.columns([1, 1])
-            with col_rem:
-                remember_me = st.checkbox("Remember me", value=True)
-            with col_fog:
-                st.markdown("<div style='text-align: right; margin-top: 4px;'><a href='#' style='color: #00f2fe; text-decoration: underline; font-size: 0.88rem; font-weight: 600;'>Forgot Password?</a></div>", unsafe_allow_html=True)
 
             login_btn = st.form_submit_button("Login ➔", type="primary", use_container_width=True)
 
